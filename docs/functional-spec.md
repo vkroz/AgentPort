@@ -27,17 +27,15 @@ A CLI tool that compiles vendor-neutral canonical rulesets into tool-specific co
 
 ### Hierarchy Model
 
-agentpack resolves rules by merging sources across multiple levels:
+Rules are resolved by priority. Local rules always win. Remotes are prioritized by their order in `agentpack.yaml`: the last remote in the list has the highest priority among remotes, the first has the lowest.
 
 ```
-user       →  ~/.config/agentpack/          # Per-user overrides
-repo       →  ./.agentpack/                 # Repo-level rules
-project    →  (inherited from parent repo)   # Multi-repo project
-org        →  (synced from org remote)       # Organization defaults
-global     →  (synced from public remote)    # Community defaults
+local     →  .agentpack/rules/, .agentpack/skills/   # Highest priority — always wins
+remotes   →  listed last → highest remote priority
+             listed first → lowest remote priority
 ```
 
-V1 implements repo-level and remote sync (org/global). Full hierarchy resolution is a future goal.
+Users define as many remotes as needed and control precedence through list order.
 
 ### Commands
 
@@ -83,7 +81,7 @@ For files **without** frontmatter (e.g., `CLAUDE.md`, `AGENTS.md`), the marker i
 
 #### Cleanup and Overwrite Behavior
 
-Before generating, `agentpack generate` scans output locations — root-level files (`CLAUDE.md`, `AGENTS.md`) and output directories (`.cursor/rules/`, `.cursor/skills/`, `.claude/skills/`) — and **deletes all files that contain the agentpack marker**. This removes stale artifacts from renamed or deleted canonical sources. Files without the marker (user-created or user-modified) are left untouched.
+Before generating, `agentpack generate` scans output locations — root-level files (`CLAUDE.md`, `AGENTS.md`) and output directories (`.claude/rules/`, `.claude/skills/`, `.cursor/rules/`, `.cursor/skills/`) — and **deletes all files that contain the agentpack marker**. This removes stale artifacts from renamed or deleted canonical sources. Files without the marker (user-created or user-modified) are left untouched.
 
 After cleanup, new files are generated from the current canonical sources. If a target path is occupied by an unmarked file:
 
@@ -124,16 +122,55 @@ Cursor skills are generated **only when `claude` is NOT in the `agents` list**. 
 
 Skills may include supplementary directories (`scripts/`, `references/`, `assets/` per the agentskills.io spec). These are copied verbatim alongside the generated `SKILL.md`.
 
-**Sync** (`agentpack sync [<remote>]`)
+**Sync** (`agentpack sync`)
 
-Merge shared rules from a remote git repo into the local `.agentpack/` directory.
+Merge shared rules and skills from all configured remote git repos into the local `.agentpack/` directory.
 
-- `<remote>` is either a name defined in `agentpack.yaml` under `remotes:`, or a full git URL
-- If `<remote>` is omitted, syncs all remotes defined in `agentpack.yaml`
-- On first run, clone the remote repo into `~/.cache/agentpack/remotes/<remote-name>/`
-- On subsequent runs, pull updates to the cached clone
-- Merge remote rules from the cache into local `.agentpack/`
-- Conflict resolution: local rules override remote rules with the same filename
+- Reads all remotes from `agentpack.yaml` under `remotes:` — no CLI arguments
+- If no remotes are configured, prints a message and exits successfully
+- On first run, clone each remote repo into `~/.cache/agentpack/remotes/<name>/`
+- On subsequent runs, pull updates to each cached clone
+- Merge remote rules from `~/.cache/agentpack/remotes/<name>/<path>/rules/` into local `.agentpack/rules/`
+- Merge remote skills from `~/.cache/agentpack/remotes/<name>/<path>/skills/` into local `.agentpack/skills/`, including any supplementary directories (`scripts/`, `references/`, `assets/`, etc.) alongside `SKILL.md`
+- Where `<path>` is the remote's configured `path` (default: `.agentpack`)
+- Synced files are marked with a sync marker identifying the remote source (see [Sync Marker](#sync-marker))
+- On re-sync, files previously synced from a remote (identified by their marker) that are no longer present in the remote are deleted from `.agentpack/`
+- If a remote is unreachable or fails, sync continues with remaining remotes and reports all errors at the end
+
+#### Sync Marker
+
+Every file copied from a remote by `sync` receives a marker so it can be tracked and cleaned up on subsequent syncs.
+
+For files **with** YAML frontmatter, the marker is a YAML comment on the first line after the opening `---`:
+
+```markdown
+---
+# SYNCED BY agentpack. Remote: community
+description: "Security rules"
+---
+```
+
+For files **without** frontmatter, the marker is an HTML comment on line 1:
+
+```markdown
+<!-- SYNCED BY agentpack. Remote: community -->
+# Security Rules
+...
+```
+
+#### Sync Conflict Resolution
+
+Remotes are processed in list order (first to last). Later remotes have higher priority and can overwrite files placed by earlier remotes. Each remote only cleans up files it previously synced (identified by its own marker).
+
+| Local file state | Remote file | Result |
+|---|---|---|
+| Does not exist | Present | Copied with sync marker |
+| Exists, has sync marker from **this** remote | Changed | Updated from remote |
+| Exists, has sync marker from **this** remote | Removed | Deleted locally |
+| Exists, has sync marker from a **different** remote | Present | **Overwritten** — later remote has higher priority |
+| Exists, **no sync marker** (local) | Any | **Skipped** — local always wins |
+
+For skills (directories), conflict resolution is at the directory level: if `.agentpack/skills/<name>/SKILL.md` exists locally without a sync marker, the entire remote `<name>/` skill directory is skipped.
 
 ## Configuration
 
@@ -155,15 +192,17 @@ Merge shared rules from a remote git repo into the local `.agentpack/` directory
 agents: [claude, cursor]    # Target agents for generation
 gitignore: true              # Auto-manage .gitignore entries
 remotes:
-  community: https://github.com/agentpack/agent-pack-community
-  my-org: git@github.com:my-org/agent-pack-shared.git
+  community: https://github.com/agentpack/agent-pack-community   # bare string: URL with default path .agentpack
+  my-org:
+    url: git@github.com:my-org/agent-pack-shared.git
+    path: agents-config      # optional: directory within the remote repo; default: .agentpack
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `agents` | Yes | Target tools for generation. Supported values: `claude`, `cursor`. |
 | `gitignore` | No | Auto-add generated files to `.gitignore`. Default: `true`. |
-| `remotes` | No | Named remote repos for `agentpack sync`. Keys are short names used as the cache directory name (`~/.cache/agentpack/remotes/<name>/`) and as the argument to `agentpack sync <name>`. Values are git URLs (HTTPS or SSH). |
+| `remotes` | No | Named remote repos for `agentpack sync`. Keys are short names used as the cache directory name (`~/.cache/agentpack/remotes/<name>/`). Values are either a bare git URL string (uses default path `.agentpack`) or an object with `url` (git URL, required) and `path` (directory within the remote repo that contains `rules/` and `skills/`; optional, default: `.agentpack`). |
 
 ### Rules Format
 
@@ -251,7 +290,6 @@ compatibility: system packages, network access, etc.
 
 - **Reverse-sync** — propagating edits made directly to generated files (e.g., `CLAUDE.md`) back to canonical rules. This is a known friction point with no clean solution yet.
 - **Additional targets** — GitHub Copilot (already benefits from `AGENTS.md` generated for cursor-only config), Windsurf, other tools
-- **Full hierarchy resolution** — automatic merging across user/project/org/global levels
 - **GUI / web interface**
 - **Rule versioning and changelogs**
 - **Rule validation and linting**
