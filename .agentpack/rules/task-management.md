@@ -1,4 +1,5 @@
 ---
+# SYNCED BY agentpack. Remote: community
 description: Task management standard for all projects in the organization.
 alwaysApply: true
 ---

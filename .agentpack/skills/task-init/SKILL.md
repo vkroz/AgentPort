@@ -1,4 +1,5 @@
 ---
+# SYNCED BY agentpack. Remote: community
 description: Workflow for defining a task
 ---
 # Task-Init Workflow
@@ -17,7 +18,7 @@ This command is **requirements definition only**:
 - Do **not** propose or evaluate solutions/approaches. If the user asks “how should we build it?”, capture that as a follow-up to be handled later under execution/planning.
 
 ## Output
-Produce a task definition document saved under `tasks/backlog/` following the naming and structure defined in `@docs/task-management.md`. The document must contain:
+Produce a task definition document saved under `tasks/backlog/` following the naming and structure defined in `@.agentpack/rules/task-management.md`. The document must contain:
 - Problem statement and motivation
 - Explicit scope and non-goals
 - Constraints and assumptions

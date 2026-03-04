@@ -1,16 +1,18 @@
 ---
-description: Workflow for executing a task
+# SYNCED BY agentpack. Remote: community
+name: task-do
+description: Execute a task
 ---
 
 # Task-Do Workflow
 
 ## Usage
-Invoke with: `/task <task-file>`
+Invoke with: `/task-do $ARGUMENTS[0]`
 
 Example: `/task-do @tasks/backlog/20260118_add_persistent_ebs_volumes.md`
 
 ## Task
-Work on the specified task file following the task management standard in `@docs/task-management.md`.
+Work on the specified task file following the task management standard in `@.agentpack/rules/task-management.md`.
 
 ## Execution Steps
 
@@ -33,7 +35,7 @@ Work on the specified task file following the task management standard in `@docs
 
 ## Rules
 
-- Follow all rules in `CLAUDE.md`
+- Follow all rules in `CLAUDE.md`, `first-principles.md`, and `task-management.md`
 - Single-task discipline: focus only on the specified task
 - YAGNI/KISS: no unrelated improvements
 - Get explicit approval before multi-step or risky changes

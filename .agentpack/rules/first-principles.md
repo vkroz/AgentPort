@@ -1,4 +1,5 @@
 ---
+# SYNCED BY agentpack. Remote: community
 description: Foundational behavioral principles for AI agents. Must always be followed by all agents.
 alwaysApply: true
 ---
